@@ -62,9 +62,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				UseLibraryDependencyInputs="true"
+				UseLibraryDependencyInputs="false"
 				LinkIncremental="2"
-				AdditionalLibraryDirectories=""
+				AdditionalLibraryDirectories="E:\LIS\megaCAM\software\CAMCmdTool"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				TargetMachine="1"
@@ -180,10 +180,6 @@
 				>
 			</File>
 			<File
-				RelativePath=".\com.cpp"
-				>
-			</File>
-			<File
 				RelativePath=".\stdafx.cpp"
 				>
 				<FileConfiguration
@@ -203,6 +199,10 @@
 					/>
 				</FileConfiguration>
 			</File>
+			<File
+				RelativePath=".\wincom.cpp"
+				>
+			</File>
 		</Filter>
 		<Filter
 			Name="Í·ÎÄ¼þ"
@@ -211,10 +211,6 @@
 			>
 			<File
 				RelativePath=".\CAMCmdTool.h"
-				>
-			</File>
-			<File
-				RelativePath=".\com.h"
 				>
 			</File>
 			<File
@@ -227,6 +223,10 @@
 			</File>
 			<File
 				RelativePath=".\targetver.h"
+				>
+			</File>
+			<File
+				RelativePath=".\wincom.h"
 				>
 			</File>
 		</Filter>

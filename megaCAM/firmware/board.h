@@ -2,7 +2,7 @@
 #define BOARD_H
 
 #define BOARD_MCK					F_CPU
-#define BOARD_UART_BAUDRATE			230400
+#define BOARD_UART_BAUDRATE			115200
 
 // DEBUG
 #define BOARD_DBG_RXD	(1 << 0)	// PD0

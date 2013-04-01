@@ -3,6 +3,7 @@
 
 #include "stdafx.h"
 #include "CAMCmdTool.h"
+#include "wincom.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -12,7 +13,7 @@
 // 唯一的应用程序对象
 
 CWinApp theApp;
-char buffer[1024 * 768];
+char buffer[1024 * 768 * 2];
 
 using namespace std;
 
@@ -37,15 +38,13 @@ typedef struct {
 } cam_cmd_t;
 
 typedef enum {
-	IMAGE_FORMAT_GRAY255,
+	IMAGE_FORMAT_GRAY8,
 	IMAGE_FORMAT_RGB565,
 	IMAGE_FORMAT_RGB555,
 	IMAGE_FORMAT_RAW,
 } image_t;
 
 class Camera {
-private:
-	COM Comx;
 private:
 int uart_timeout_read(int port, unsigned int timeout_ms) {
 	char c = -1;
@@ -54,7 +53,7 @@ int uart_timeout_read(int port, unsigned int timeout_ms) {
 
 	tmark = GetTickCount();
 	do {
-		nbytes = Comx.usart_read(port, &c, 1, 1);
+		nbytes = COM::read(port, &c, 1, 1);
 		if(nbytes == 0) {
 			if((GetTickCount() - tmark) > timeout_ms)
 				return -1;
@@ -72,7 +71,7 @@ int write_cmd(int uport, unsigned int cmd, unsigned int para1, unsigned int para
 	ctrl.para1 = para1;
 	ctrl.para2 = para2;
 	ctrl.check_sum = check_sum;
-	Comx.usart_write(uport, (char *)&ctrl, 1, sizeof(cam_cmd_t));
+	COM::write(uport, (char *)&ctrl, 1, sizeof(cam_cmd_t));
 	res = uart_timeout_read(uport, timeout);
 	if(res == -1)
 		return -1;
@@ -84,13 +83,22 @@ int write_cmd(int uport, unsigned int cmd, unsigned int para1, unsigned int para
 
 public:
 int init_com(int port, unsigned int baudrate) {
-	if(Comx.usart_open(port) != 0) {
-		printf("failed to open COM%d", port);
+	int limit = 6;
+	int ret;
+	
+	do {
+		ret = COM::open(port);
+		if(ret != 0)
+			Sleep(1000);
+	} while (ret != 0 && -- limit);
+
+	if(limit == 0) {
+		//printf("failed to open COM%d", port);
 		return -1;
-	} 
-	Comx.usart_ioctrl(port, USART_CMD_MODE, USART_STOP_1BIT | USART_DATA_8BIT | USART_PARITY_NONE);
-	Comx.usart_ioctrl(port, USART_CMD_BAUDRATE, baudrate);
-	Comx.usart_ioctrl(port, USART_CMD_BUFLEN, 10240);
+	}
+	COM::ioctrl(port, USART_CMD_MODE, USART_STOP_1BIT | USART_DATA_8BIT | USART_PARITY_NONE);
+	COM::ioctrl(port, USART_CMD_BAUDRATE, baudrate);
+	COM::ioctrl(port, USART_CMD_BUFLEN, 10240);
 	return 0;
 }
 
@@ -150,7 +158,7 @@ int read(int port, char *buffer, int start_pixel, int length, unsigned int timeo
 	count = 0;
 	pre_cache = 0;
 	while(1) {
-		nbytes = Comx.usart_read(port, buffer + count, 0, 1);
+		nbytes = COM::read(port, buffer + count, 0, 1);
 		if(nbytes) {
 			count += nbytes;
 			if(count * 100 / length > pre_cache) {
@@ -162,7 +170,7 @@ int read(int port, char *buffer, int start_pixel, int length, unsigned int timeo
 		} else {
 			if((GetTickCount() - time_mark) > timeout) {
 				printf("\n-> timeout! <-\n");
-				Comx.usart_close(port);
+				COM::close(port);
 				getchar();
 				return -1;
 			}
@@ -171,6 +179,7 @@ int read(int port, char *buffer, int start_pixel, int length, unsigned int timeo
 			break;
 		}		
 	}
+	printf("\r\n");
 	return 0;
 }
 
@@ -278,7 +287,7 @@ int test(int port, char *buffer) {
 class image {
 
 public:
-	static int save_image(wchar_t *fname, char *buf, int width, int height, image_t color_type) {
+	static int save_image(wchar_t *fname, char *buf, int width, int height, image_t color_type, GUID ftype) {
 		CImage image;
 		int i, j;
 		unsigned int image_size = width * height;
@@ -303,7 +312,7 @@ public:
 				break;
 				case IMAGE_FORMAT_RGB555:
 				break;
-				case IMAGE_FORMAT_GRAY255:
+				case IMAGE_FORMAT_GRAY8:
 					image.SetPixelRGB(j, i, *buf, *buf, *buf);
 					buf ++;
 				break;
@@ -343,7 +352,7 @@ public:
 				}
 			}
 		}
-		image.Save(fname, Gdiplus::ImageFormatPNG);
+		image.Save(fname, ftype);
 		image.Destroy();
 		return 0;
 	}
@@ -412,11 +421,24 @@ static int configRAW(int port) {
 	return 0;
 }
 
+static void help(const char *cmd) {
+	return;
+}
+
+#define MINIUM_ARGC	4
+#define TIMEOUT		2000
 int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 {
 	int nRetCode = 0;
 	CImage image;
 	Camera camera;
+	TCHAR *inputCmd;
+	
+	int port;
+	int bd;
+
+	int addr;
+	int value;
 
 	// 初始化 MFC 并在失败时显示错误
 	if (!AfxWinInit(::GetModuleHandle(NULL), NULL, ::GetCommandLine(), 0))
@@ -427,6 +449,198 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 	}
 	else
 	{
+		if(argc < MINIUM_ARGC) {
+			help(NULL);
+			return -1;
+		} else {
+			swscanf(argv[1], L"%d", &port);
+			swscanf(argv[2], L"%d", &bd);
+			inputCmd = argv[3];
+		}
+
+		if(camera.open(port, bd) != 0) {
+			printf("open camera failed on COM%d[%d]\r\n", port, bd);
+			return -1;
+		}
+		
+		int count = 3;
+		
+		do {
+			inputCmd = argv[count ++];
+			if(wcscmp(inputCmd, L"wreg") == 0) {
+				if(argc < (count + 2)) {
+					help("wreg");
+					COM::close(port);
+					return -1;
+				} else {
+					swscanf(argv[count ++], L"%x", &addr);
+					swscanf(argv[count ++], L"%x", &value);
+					
+					printf("write value[0x%x] to register[0x%x] ... ", value, addr);
+					if(camera.write_ovreg(port, addr, value, TIMEOUT) != 0) {
+						printf("[error]\r\n");
+					} else {
+						printf("[ok]\r\n");
+					}
+				}
+			} else if(wcscmp(inputCmd, L"rreg") == 0) {
+				if(argc < (count + 1)) {
+					help("rreg");
+					COM::close(port);
+					return -1;
+				} else {
+					swscanf(argv[count ++], L"%x", &addr);
+					
+					printf("read register[0x%x] ... ", addr);
+					value = camera.read_ovreg(port, addr, TIMEOUT);
+					if(value == -1) {
+						printf("[error]\r\n");
+					} else {
+						printf("[ok][reg=0x%x]\r\n", value); 
+					}
+				}
+			} else if(wcscmp(inputCmd, L"clrbit") == 0) {
+				if(argc < (count + 2)) {
+					help("clrbit");
+					COM::close(port);
+					return -1;
+				} else {
+					swscanf(argv[count ++], L"%x", &addr);
+					swscanf(argv[count ++], L"%x", &value);
+					
+					printf("clear register[0x%x] bit[%d] ... ", addr, value);
+					if(regBitClear(port, addr, (1 << value)) != 0) {
+						printf("[error]\r\n");
+					} else {
+						printf("[ok][reg=0x%x]\r\n", camera.read_ovreg(port, addr, TIMEOUT));
+					}
+				}
+			} else if(wcscmp(inputCmd, L"setbit") == 0) {
+				if(argc < (count + 2)) {
+					help("setbit");
+					COM::close(port);
+					return -1;
+				} else {
+					swscanf(argv[count ++], L"%x", &addr);
+					swscanf(argv[count ++], L"%x", &value);
+					
+					printf("set register[0x%x] bit[%d] ... ", addr, value);
+					if(regBitSet(port, addr, (1 << value)) != 0) {
+						printf("[error]\r\n");
+					} else {
+						printf("[ok][reg=0x%x]\r\n", camera.read_ovreg(port, addr, TIMEOUT));
+					}
+				}
+			} else if(wcscmp(inputCmd, L"bd") == 0) {
+				if(argc < (count + 1)) {
+					help("bd");
+					COM::close(port);
+					return -1;
+				} else {
+					swscanf(argv[count ++], L"%d", &bd);
+					
+					printf("set camera baudrate=[%d] ... ", bd);
+					if(camera.reconfig_usart_bandrate(port, bd, TIMEOUT) != 0) {
+						printf("[error]\r\n");
+					} else {
+						printf("[ok]\r\n");
+						COM::close(port);
+						Sleep(500);
+						if(camera.open(port, bd) != 0) {
+							printf("reopen COM%d[%d] failed", port, bd);
+							COM::close(port);
+							return -1;
+						} else {
+							printf("reopen COM%d with [%d]\r\n", port, bd);
+						}
+					}
+				}
+			} else if(wcscmp(inputCmd, L"sccb-addr") == 0) {
+				if(argc < (count + 1)) {
+					help("sccb-addr");
+					COM::close(port);
+					return -1;
+				} else {
+					swscanf(argv[count ++], L"%x", &addr);
+					
+					printf("set SCCB device address=[0x%x] ... ", addr);
+					if(camera.config_ovaddr(port, addr, 100)!= 0) {
+						printf("[error]\r\n");
+					} else {
+						printf("[ok]\r\n");
+					}
+				}
+			} else if(wcscmp(inputCmd, L"shot") == 0) {
+				if(argc < (count + 4)) {
+					help("shot");
+					COM::close(port);
+					return -1;
+				} else {
+					image_t type;
+					int width;
+					int height;
+					GUID sformat;
+					int fsize;
+
+					swscanf(argv[count ++], L"%d", &width);
+					swscanf(argv[count ++], L"%d", &height);
+					
+					if(wcscmp(argv[count], L"rgb565") == 0) {
+						type = IMAGE_FORMAT_RGB565;
+						fsize = width * height * 2;
+					} else if(wcscmp(argv[count], L"rgb555") == 0) {
+						type = IMAGE_FORMAT_RGB555;
+						fsize = width * height * 2;
+					} else if(wcscmp(argv[count], L"raw") == 0) {
+						type = IMAGE_FORMAT_RAW;
+						fsize = width * height;
+					} else if(wcscmp(argv[count], L"gray") == 0) {
+						type = IMAGE_FORMAT_GRAY8;
+						fsize = width * height;
+					} else {
+						printf("unknown image format\r\n");
+						continue;
+					}
+					
+					count ++;
+					time_t rawtime;
+					struct tm * timeinfo;
+					wchar_t wbuffer[128];
+
+					time(&rawtime);
+					timeinfo = localtime (&rawtime);
+
+					if(wcscmp(argv[count], L"jpg") == 0) {
+						sformat = Gdiplus::ImageFormatJPEG;
+						wcsftime(wbuffer, 128, L"%Y-%m-%d-%H%M%S.jpg", timeinfo);
+					} else if(wcscmp(argv[count], L"png") == 0) {
+						sformat = Gdiplus::ImageFormatPNG;
+						wcsftime(wbuffer, 128, L"%Y-%m-%d-%H%M%S.png", timeinfo);
+					} else {
+						printf("unknown image format\r\n");
+						continue;
+					}
+					count ++;
+
+					if(camera.capture(port, 100) != 0) {
+						printf("capture image failed\r\n");
+						continue;
+					}
+
+					if(camera.read(port, buffer, 0, fsize, TIMEOUT) != 0) {
+						printf("read image failed\r\n");
+						continue;
+					}
+					wprintf(L"save image file %s\n", wbuffer);
+					image::save_image(wbuffer, buffer, width, height, type, sformat);
+				}
+			}
+		} while (count < argc);
+		
+		COM::close(port);
+	}
+		
+#if (0)		
 		//camera.test(3, buffer);
 		if(camera.open(3, 230400) != 0)
 			return -1;
@@ -435,10 +649,10 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 			return -1;
 		
 		configQVGA(3);
-		config2OV7640(3);
+		config2OV7141(3);
 		//configRAW(3);
-		configRGB565(3);
-#if (0)
+		//configRGB565(3);
+
 		// 0x24 = QVGA, 0x04 = VGA
 		if(camera.write_ovreg(3, 0x14, 0x24, 100) != 0)
 			return -1;
@@ -454,16 +668,16 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 		// RGB:565 Enable = 0x11, RGB:555 Enable = 0x05
 		if(camera.write_ovreg(3, 0x1F, 0x11, 100) != 0)
 			return -1;
-#endif		
+		
 		Sleep(1000);
 
 		if(camera.capture(3, 100) != 0)
 			return -1;
-		if(camera.read(3, buffer, 0, 320 * 240 * 2, 1000) != 0)
+		if(camera.read(3, buffer, 0, 320 * 240, 1000) != 0)
 			return -1;
-		image::save_image(L"test.png", buffer, 320, 240, IMAGE_FORMAT_RGB565);
+		image::save_image(L"test.png", buffer, 320, 240, IMAGE_FORMAT_GRAY8);
 		// TODO: 在此处为应用程序的行为编写代码。
 	}
-
+#endif
 	return nRetCode;
 }
