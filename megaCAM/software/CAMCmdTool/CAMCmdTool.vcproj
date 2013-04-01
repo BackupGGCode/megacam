@@ -180,6 +180,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\cmdline.cpp"
+				>
+			</File>
+			<File
 				RelativePath=".\stdafx.cpp"
 				>
 				<FileConfiguration
@@ -211,6 +215,10 @@
 			>
 			<File
 				RelativePath=".\CAMCmdTool.h"
+				>
+			</File>
+			<File
+				RelativePath=".\cmdline.h"
 				>
 			</File>
 			<File
