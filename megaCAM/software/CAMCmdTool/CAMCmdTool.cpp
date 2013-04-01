@@ -131,34 +131,39 @@ int open(int port, int baudrate, int timeout) {
 	return 0;
 }
 
-int reconfig_usart_bandrate(int port, unsigned int baudrate, int timeout) {
-	return write_cmd(port, CMD_CONF_BDR, baudrate, NULL, timeout);
+int close(void) {
+	COM::close(this->port);
+	return 0;
 }
 
-int read_ovreg(int port, int addr, int timeout) {	
-	write_cmd(port, CMD_READ_OVREG, addr, NULL, timeout);
-	return uart_timeout_read(port, timeout);
+int reconfig_usart_bandrate(unsigned int baudrate) {
+	return write_cmd(this->port, CMD_CONF_BDR, baudrate, NULL, this->timeout);
 }
 
-int write_ovreg(int port, int addr, int value, int timeout) {
-	return write_cmd(port, CMD_WRITE_OVREG, addr, value, timeout);
+int read_ovreg(int addr) {	
+	write_cmd(this->port, CMD_READ_OVREG, addr, NULL, this->timeout);
+	return uart_timeout_read(this->port, this->timeout);
+}
+
+int write_ovreg(int addr, int value) {
+	return write_cmd(this->port, CMD_WRITE_OVREG, addr, value, this->timeout);
 }
 
 int config_ovaddr(int dev_addr) {
 	return write_cmd(this->port, CMD_CONF_OVADR, dev_addr, NULL, this->timeout);
 }
 
-int capture(int port, int timeout) {
-	return write_cmd(port, CMD_CAPTURE, NULL, NULL, timeout);
+int capture(void) {
+	return write_cmd(this->port, CMD_CAPTURE, NULL, NULL, this->timeout);
 }
 
-int read(int port, char *buffer, int start_pixel, int length, unsigned int timeout) {
+int read(char *buffer, int start_pixel, int length) {
 	int nbytes;
 	int count;
 	unsigned int time_mark;
 	int pre_cache;
 	
-	if(write_cmd(port, CMD_READ, start_pixel, length, timeout) != 0) {
+	if(write_cmd(this->port, CMD_READ, start_pixel, length, this->timeout) != 0) {
 		return -1;
 	}
 	
@@ -167,7 +172,7 @@ int read(int port, char *buffer, int start_pixel, int length, unsigned int timeo
 	count = 0;
 	pre_cache = 0;
 	while(1) {
-		nbytes = COM::read(port, buffer + count, 0, 1);
+		nbytes = COM::read(this->port, buffer + count, 0, 10);
 		if(nbytes) {
 			count += nbytes;
 			if(count * 100 / length > pre_cache) {
@@ -191,7 +196,13 @@ int read(int port, char *buffer, int start_pixel, int length, unsigned int timeo
 	printf("\r\n");
 	return 0;
 }
+};
 
+
+Camera myCamera;
+
+
+#if (0)
 int test(int port, char *buffer) {
 	int value;
 	//char buffer[320 * 240];
@@ -214,7 +225,7 @@ int test(int port, char *buffer) {
 		printf("config OV-DEVICE-ADDRESS 0x42\r\n");
 	}
 
-	value = read_ovreg(port, 0x0a, 1000);
+	value = read_ovreg(0x0a);
 	if(value == -1) {
 		printf("read addr 0x0A failed");
 		return -1;
@@ -289,8 +300,7 @@ int test(int port, char *buffer) {
 #endif
 	return 0;
 }
-
-};
+#endif
 
 
 class image {
@@ -368,30 +378,29 @@ public:
 };
 
 
-static int regBitSet(int port, int address, int mask) {
+static int regBitSet(int address, int mask) {
 	int buf;
-	Camera camera;
 
-	buf = camera.read_ovreg(port, address, 100);
+	buf = myCamera.read_ovreg(address);
 	if(buf != -1) {
 		buf |= mask;
-		return camera.write_ovreg(port, address, buf, 100);
+		return myCamera.write_ovreg(address, buf);
 	}
 	return -1;
 }
 
-static int regBitClear(int port, int address, int mask) {
+static int regBitClear(int address, int mask) {
 	int buf;
-	Camera camera;
 
-	buf = camera.read_ovreg(port, address, 100);
+	buf = myCamera.read_ovreg(address);
 	if(buf != -1) {
 		buf &= ~mask;
-		return camera.write_ovreg(port, address, buf, 100);
+		return myCamera.write_ovreg(address, buf);
 	}
 	return -1;
 }
 
+#if (0)
 static int configQVGA(int port) {
 	return regBitSet(port, 0x14, (1 << 5));
 }
@@ -429,15 +438,14 @@ static int configRAW(int port) {
 		return -1;
 	return 0;
 }
+#endif
 
 static void help(const char *cmd) {
 	return;
 }
 
-
 static int sccb_addr(int argc, char **argv) {
 	int addr;
-	Camera camera;
 
 	if(argc < 2) {
 		help("sccb-addr");
@@ -446,7 +454,53 @@ static int sccb_addr(int argc, char **argv) {
 		sscanf(argv[1], "%x", &addr);
 		
 		printf("set sccb device address=[0x%x] ... ", addr);
-		if(camera.config_ovaddr(addr)!= 0) {
+		if(myCamera.config_ovaddr(addr)!= 0) {
+			printf("[error]\n");
+			return -1;
+		} else {
+			printf("[ok]\n");
+			return 0;
+		}
+	}
+}
+
+static int open(int argc, char **argv) {
+	int port;
+	int baudrate;
+	int timeout;
+
+	if(argc < 4) {
+		help("open");
+		return -1;
+	}
+
+	sscanf(argv[1], "%d", &port);
+	sscanf(argv[2], "%d", &baudrate);
+	sscanf(argv[3], "%d", &timeout);
+
+	printf("open camera on com%d[%d], timeout[%d]ms ... ", port, baudrate, timeout);
+	if(myCamera.open(port, baudrate, timeout) != 0) {
+		printf("[error]\n");
+		return -1;
+	} else {
+		printf("[ok]\n");
+		return 0;
+	}
+}
+
+static int wreg(int argc, char **argv) {
+	int addr;
+	int value;
+
+	if(argc < 3) {
+		help("wreg");
+		return -1;
+	} else {
+		sscanf(argv[1], "%x", &addr);
+		sscanf(argv[2], "%x", &value);
+		
+		printf("write value[0x%x] to register[0x%x] ... ", value, addr);
+		if(myCamera.write_ovreg(addr, value) != 0) {
 			printf("[error]\r\n");
 			return -1;
 		} else {
@@ -456,33 +510,175 @@ static int sccb_addr(int argc, char **argv) {
 	}
 }
 
-static int wreg(int argc, char **argv) {
-	return 0;
-}
-
 static int rreg(int argc, char **argv) {
+	int addr;
+	int value;
 
-	return 0;
+	if(argc < 3) {
+		help("rreg");
+		return -1;
+	} else {
+		sscanf(argv[1], "%x", &addr);
+					
+		printf("read register[0x%x] ... ", addr);
+		value = myCamera.read_ovreg(addr);
+		if(value == -1) {
+			printf("[error]\n");
+			return -1;
+		} else {
+			printf("[ok][reg=0x%x]\r\n", value); 
+			return 0;
+		}
+	}
 }
 
 static int clrbit(int argc, char **argv) {
-	return 0;
+	int addr;
+	int bitNum;
+
+	if(argc < 3) {
+		help("clrbit");
+		return -1;
+	} else {
+		sscanf(argv[1], "%x", &addr);
+		sscanf(argv[2], "%d", &bitNum);
+		
+		printf("clear register[0x%x]-bit[%d] ... ", addr, bitNum);
+		if(regBitClear(addr, (1 << bitNum)) != 0) {
+			printf("[error]\n");
+			return -1;
+		} else {
+			printf("[ok][reg=0x%x]\n", myCamera.read_ovreg(addr));
+			return 0;
+		}
+	}
 }
 
 static int setbit(int argc, char **argv) {
+	int addr;
+	int bitNum;
+
+	if(argc < 3) {
+		help("setbit");
+		return -1;
+	} else {
+		sscanf(argv[1], "%x", &addr);
+		sscanf(argv[2], "%d", &bitNum);
+		
+		printf("set register[0x%x]-bit[%d] ... ", addr, bitNum);
+		if(regBitSet(addr, (1 << bitNum)) != 0) {
+			printf("[error]\n");
+			return -1;
+		} else {
+			printf("[ok][reg=0x%x]\n", myCamera.read_ovreg(addr));
+			return 0;
+		}
+	}
 	return 0;
 }
 
 static int bd(int argc, char **argv) {
-	return 0;
+	int bd;
+
+	if(argc < 2) {
+		help("bd");
+		return -1;
+	} else {
+		sscanf(argv[1], "%d", &bd);
+		
+		printf("set camera baudrate=[%d] ... ", bd);
+		if(myCamera.reconfig_usart_bandrate(bd) != 0) {
+			printf("[error]\n");
+			return -1;
+		} else {
+			printf("[ok]\n");
+			myCamera.close();
+			Sleep(500);
+			printf("reopen com%d[%d] ... ", myCamera.port, myCamera.baudrate);
+			if(myCamera.open(myCamera.port, bd, myCamera.timeout) != 0) {
+				printf("[error]\n");
+				return -1;
+			} else {
+				printf("[ok]\n");
+				return 0;
+			}
+		}
+	}
 }
 
 static int shot(int argc, char **argv) {
-	return 0;
+	image_t type;
+	int width;
+	int height;
+	GUID sformat;
+	int fsize;
+	
+	if(argc < 5) {
+		help("shot");
+		return -1;
+	} else {
+		sscanf(argv[1], "%d", &width);
+		sscanf(argv[2], "%d", &height);
+		
+		if(strcmp(argv[3], "rgb565") == 0) {
+			type = IMAGE_FORMAT_RGB565;
+			fsize = width * height * 2;
+		} else if(strcmp(argv[3], "rgb555") == 0) {
+			type = IMAGE_FORMAT_RGB555;
+			fsize = width * height * 2;
+		} else if(strcmp(argv[3], "raw") == 0) {
+			type = IMAGE_FORMAT_RAW;
+			fsize = width * height;
+		} else if(strcmp(argv[3], "gray") == 0) {
+			type = IMAGE_FORMAT_GRAY8;
+			fsize = width * height;
+		} else {
+			printf("unknown image format\n");
+			return -1;
+		}
+		
+		time_t rawtime;
+		struct tm * timeinfo;
+		wchar_t wbuffer[128];
+
+		time(&rawtime);
+		timeinfo = localtime (&rawtime);
+
+		if(strcmp(argv[4], "jpg") == 0) {
+			sformat = Gdiplus::ImageFormatJPEG;
+			wcsftime(wbuffer, 128, L"%Y-%m-%d-%H%M%S.jpg", timeinfo);
+		} else if(strcmp(argv[4], "png") == 0) {
+			sformat = Gdiplus::ImageFormatPNG;
+			wcsftime(wbuffer, 128, L"%Y-%m-%d-%H%M%S.png", timeinfo);
+		} else {
+			printf("unknown image format\n");
+			return -1;
+		}
+		printf("capture image ... ");
+		if(myCamera.capture() != 0) {
+			printf("[error]\n");
+			return -1;
+		} else {
+			printf("[ok]\n");
+		}
+		
+		printf("read image ... ");
+		if(myCamera.read(buffer, 0, fsize) != 0) {
+			printf("[failed]\n");
+			return -1;
+		} else {
+			printf("[ok]\n");
+		}
+		wprintf(L"save image file %s ... ", wbuffer);
+		image::save_image(wbuffer, buffer, width, height, type, sformat);
+		printf("[ok]\n");
+		return 0;
+	}
 }
 
 
 tCmdLineEntry g_sCmdTable[] = {
+	{"open", open, ""},
 	{"sccb-addr", sccb_addr, ""},
 	{"wreg", wreg, ""},
 	{"rreg", rreg, ""},
@@ -500,14 +696,8 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 {
 	int nRetCode = 0;
 	CImage image;
-	Camera camera;
-	TCHAR *inputCmd;
-	
-	int port;
-	int bd;
-
-	int addr;
-	int value;
+	TCHAR *initFname;
+	char lineBuffer[256];
 
 	// 初始化 MFC 并在失败时显示错误
 	if (!AfxWinInit(::GetModuleHandle(NULL), NULL, ::GetCommandLine(), 0))
@@ -518,7 +708,35 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 	}
 	else
 	{
-		
+		if(argc < 2) {
+			int c;
+			printf("Warning: Init file is not specified\n");
+			printf("Press ESC to give up, ENTER to continue\n");
+			while (1) {
+				c = _getch();
+				if(c == 0x1b)
+					return 0;
+				if(c == 0x0d)
+					break;
+			}
+		} else {
+			FILE *fh;
+
+			initFname = argv[1];
+			fh = _wfopen(initFname, L"r");
+			if(fh == NULL) {
+				printf("Init file open error\n");
+				return -1;
+			} else {
+				wprintf(L"Init file = %s\n", initFname); 
+			}
+			while(fgets(lineBuffer, sizeof(lineBuffer), fh) != NULL) {
+				CmdLineProcess(lineBuffer);
+			}
+			fclose(fh);
+
+			COM::close(3);
+		}
 
 #if (0)
 		if(argc < MINIUM_ARGC) {
