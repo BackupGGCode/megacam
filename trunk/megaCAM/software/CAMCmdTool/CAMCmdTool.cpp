@@ -45,6 +45,11 @@ typedef enum {
 } image_t;
 
 class Camera {
+public:
+	int port;
+	int baudrate;
+	int timeout;
+
 private:
 int uart_timeout_read(int port, unsigned int timeout_ms) {
 	char c = -1;
@@ -82,7 +87,7 @@ int write_cmd(int uport, unsigned int cmd, unsigned int para1, unsigned int para
 }
 
 public:
-int init_com(int port, unsigned int baudrate) {
+int init_com(int port, int baudrate, int timeout) {
 	int limit = 6;
 	int ret;
 	
@@ -99,14 +104,18 @@ int init_com(int port, unsigned int baudrate) {
 	COM::ioctrl(port, USART_CMD_MODE, USART_STOP_1BIT | USART_DATA_8BIT | USART_PARITY_NONE);
 	COM::ioctrl(port, USART_CMD_BAUDRATE, baudrate);
 	COM::ioctrl(port, USART_CMD_BUFLEN, 10240);
+
+	this->port = port;
+	this->baudrate = baudrate;
+	this->timeout = timeout;
 	return 0;
 }
 
-int echo(int port, int timeout) {
+int echo(void) {
 	int echo;
 
-	write_cmd(port, CMD_ECHO, NULL, NULL, timeout);
-	echo = uart_timeout_read(port, timeout);
+	write_cmd(this->port, CMD_ECHO, NULL, NULL, this->timeout);
+	echo = uart_timeout_read(this->port, this->timeout);
 	if(echo == 'E') {
 		return 0;
 	} else {
@@ -114,10 +123,10 @@ int echo(int port, int timeout) {
 	}
 }
 
-int open(int port, unsigned int baudrate) {
-	if(init_com(port, baudrate) != 0)
+int open(int port, int baudrate, int timeout) {
+	if(init_com(port, baudrate, timeout) != 0)
 		return -1;
-	if(this->echo(port, 1000) != 0)
+	if(this->echo() != 0)
 		return -1;
 	return 0;
 }
@@ -135,8 +144,8 @@ int write_ovreg(int port, int addr, int value, int timeout) {
 	return write_cmd(port, CMD_WRITE_OVREG, addr, value, timeout);
 }
 
-int config_ovaddr(int port, int dev_addr, int timeout) {
-	return write_cmd(port, CMD_CONF_OVADR, dev_addr, NULL, timeout);
+int config_ovaddr(int dev_addr) {
+	return write_cmd(this->port, CMD_CONF_OVADR, dev_addr, NULL, this->timeout);
 }
 
 int capture(int port, int timeout) {
@@ -188,17 +197,17 @@ int test(int port, char *buffer) {
 	//char buffer[320 * 240];
 	//const unsigned char pgm_header[] = "P5 320 240 255\r";
 	
-	if(init_com(3, 230400) != 0)
+	if(init_com(3, 230400, 1000) != 0)
 		return -1;
 
-	if(echo(port, 3000) == -1) {
+	if(echo() == -1) {
 		printf("echo test failed\r\n");
 		return -1;
 	} else {
 		printf("camera is ready\r\n");
 	}
 
-	if(config_ovaddr(port, 0x42, 1000) !=- 0) {
+	if(config_ovaddr(0x42) !=- 0) {
 		printf("config ov-device-address failed\r\n");
 		return -1;
 	} else {
@@ -425,6 +434,66 @@ static void help(const char *cmd) {
 	return;
 }
 
+
+static int sccb_addr(int argc, char **argv) {
+	int addr;
+	Camera camera;
+
+	if(argc < 2) {
+		help("sccb-addr");
+		return -1;
+	} else {
+		sscanf(argv[1], "%x", &addr);
+		
+		printf("set sccb device address=[0x%x] ... ", addr);
+		if(camera.config_ovaddr(addr)!= 0) {
+			printf("[error]\r\n");
+			return -1;
+		} else {
+			printf("[ok]\r\n");
+			return 0;
+		}
+	}
+}
+
+static int wreg(int argc, char **argv) {
+	return 0;
+}
+
+static int rreg(int argc, char **argv) {
+
+	return 0;
+}
+
+static int clrbit(int argc, char **argv) {
+	return 0;
+}
+
+static int setbit(int argc, char **argv) {
+	return 0;
+}
+
+static int bd(int argc, char **argv) {
+	return 0;
+}
+
+static int shot(int argc, char **argv) {
+	return 0;
+}
+
+
+tCmdLineEntry g_sCmdTable[] = {
+	{"sccb-addr", sccb_addr, ""},
+	{"wreg", wreg, ""},
+	{"rreg", rreg, ""},
+	{"clrbit", clrbit, ""},
+	{"setbit", setbit, ""},
+	{"bd", bd, ""},
+	{"shot", shot, ""},
+	{0, 0, 0}
+};
+
+
 #define MINIUM_ARGC	4
 #define TIMEOUT		2000
 int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
@@ -449,6 +518,9 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 	}
 	else
 	{
+		
+
+#if (0)
 		if(argc < MINIUM_ARGC) {
 			help(NULL);
 			return -1;
@@ -638,6 +710,7 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 		} while (count < argc);
 		
 		COM::close(port);
+#endif
 	}
 		
 #if (0)		
