@@ -1,0 +1,28 @@
+****************************************
+	device_name			= 	atmega48	// device name
+	signature[0] 		=	0x1e		// deivce signature 0x00
+	signature[1] 		=	0x92		// deivce signature 0x01
+	signature[2] 		=	0x05		// deivce signature 0x02
+	flash_page_sizeb	=	64			// device flash page size in BYTE
+	flash_total_pages	=	64			// device flash total pages
+	eeprom_page_sizeb	=	4			// device eeprom page size in BYTE
+	eeprom_total_pages	=	64			// device eeprom total pages
+****************************************
+	device_name			= 	atmega168	// device name
+	signature[0] 		=	0x1e		// deivce signature 0x00
+	signature[1] 		=	0x94		// deivce signature 0x01
+	signature[2] 		=	0x0b		// deivce signature 0x02
+	flash_page_sizeb	=	128			// device flash page size in BYTE
+	flash_total_pages	=	128			// device flash total pages
+	eeprom_page_sizeb	=	4			// device eeprom page size in BYTE
+	eeprom_total_pages	=	128			// device eeprom total pages
+****************************************
+	//device_name		= 
+	//signature[0] 		=	
+	//signature[1] 		=	
+	//signature[2] 		=	
+	//flash_page_sizeb	=	
+	//flash_total_pages	=	
+	//eeprom_page_sizeb	=	
+	//eeprom_total_pages=	
+****************************************
