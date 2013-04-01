@@ -506,7 +506,7 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 					return -1;
 				} else {
 					swscanf(argv[count ++], L"%x", &addr);
-					swscanf(argv[count ++], L"%x", &value);
+					swscanf(argv[count ++], L"%d", &value);
 					
 					printf("clear register[0x%x] bit[%d] ... ", addr, value);
 					if(regBitClear(port, addr, (1 << value)) != 0) {
@@ -522,7 +522,7 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 					return -1;
 				} else {
 					swscanf(argv[count ++], L"%x", &addr);
-					swscanf(argv[count ++], L"%x", &value);
+					swscanf(argv[count ++], L"%d", &value);
 					
 					printf("set register[0x%x] bit[%d] ... ", addr, value);
 					if(regBitSet(port, addr, (1 << value)) != 0) {
