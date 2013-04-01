@@ -32,7 +32,7 @@ read:
 
 # rule for deleting dependent files (those which can be built by Make):
 clean:
-	rm -f *.hex *.bin *.lst *.obj *.cof *.list *.map *.eep.hex *.elf *.o mapfile
+	rm -f *.hex *.lst *.obj *.cof *.list *.map *.eep.hex *.elf *.o mapfile
 
 # Generic rule for compiling C files:
 .c.o:
