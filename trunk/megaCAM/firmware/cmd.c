@@ -23,7 +23,7 @@ static int echo(int argc, char **argv);
 static int test(int argc, char **argv);
 static int mrd(int argc, char **argv);
 
-int USART_MODE_ENABLE = 0;
+int USART_MODE_ENABLE = 1;
 
 #define MAX_USART_BDR	(F_CPU / 8)
 #define MIN_USART_BDR	(F_CPU / 65535)
@@ -49,8 +49,8 @@ tCmdLineEntry g_sCmdTable[] = {
 	{"rg",   rreg, ""},
 	{"cp",   cap,  ""},
 	{"rd",   read, ""},
-	{"mrd",  mrd,  ""},
-	{"ts",   test, ""},
+	//{"mrd",  mrd,  ""},
+	//{"ts",   test, ""},
 	//{"C",	 modem, ""},
 	{"help", help, ""},
 	{0, 0, 0}
@@ -65,7 +65,6 @@ wg [address{HEX}{BYTE}] [value{HEX}{BYTE}] write to the camera register\r\n\
 rg [address{HEX}{BYTE}] read from the camera register\r\n\
 cp [empty] capture one frame picture\r\n\
 rd [start-pixel{DEC}][bytes-to-read{DEC}] read picture data\r\n\
-mrd [image-type{rgb|bw}][image-width{DEC}][image-height{DEC}] read picture though modem\
 help [empty] display these messages\r\n\
 ";
 
@@ -274,38 +273,11 @@ static int read(int argc, char **argv) {
 		return -1;
 	}
 	
-	if(USART_MODE_ENABLE)
-		usart_output_str_pgm(str0);
+	usart_output_str_pgm(str0);
+		
+	cam_read(start, len);
 	
-	/* output binary code */
-	FIFO_OE_LOW(); // #RE low too
-	FIFO_RCLK_LOW();
-	FIFO_RRST_LOW();
-	
-	// write some dummy read clocks
-	for(i = 0; i < 32; i ++) {
-		FIFO_RCLK_HIGH();
-		FIFO_RCLK_LOW();
-	}
-	
-	FIFO_RRST_HIGH();
-	/* read data from FIFO and sent to uart */
-	for(i = 0; i < (len + start); i ++) {
-		FIFO_RCLK_HIGH();
-		if(i >= start) {
-			//if(USART_MODE_ENABLE) {
-			//	usart_output_dec(FIFO_READ() & 0xFF);
-			//	usart_output_str(" ");
-			//} else {
-				UART_WRITE(FIFO_READ());
-			//}
-		}
-		FIFO_RCLK_LOW();
-	}
-	FIFO_OE_HIGH(); //#RE high too
-	
-	if(USART_MODE_ENABLE)
-		usart_output_str_pgm(str1);
+	usart_output_str_pgm(str1);
 	return 0;
 }
 
@@ -892,6 +864,24 @@ int usart_read(int timeout_ms) {
 	return (UDR0 & 0xff);
 }
 
+
+int _usart_read(int timeout_ms, char c) {
+	int buf = -1;
+	
+	while( (UCSR0A & (1 << 7)) == 0 ) {
+		-- timeout_ms;
+		if(timeout_ms == 0) {
+			return -1;
+		}
+		_delay_ms(1);
+	}
+	buf = UDR0 & 0xFF;
+	if(c == buf)
+		return 0;
+	return -1;
+}
+
+
 #define UART_READ_TIMEOUT	5000
 int cmd_package_listen() {
 	cam_cmd_t cp;
@@ -956,10 +946,11 @@ int cmd_package_listen() {
 			}
 		break;
 		case CMD_CONF_BDR:
-			if(cp.para1 < 1600 || cp.para2 > 3000000){
+			if(cp.para1 < 1600 || cp.para1 > 3000000){
 				UART_WRITE(CMD_FAILED);
 			} else {
 				UART_WRITE(CMD_PASS);
+				_delay_ms(100);
 				UART_OPEN(cp.para1);
 			}
 		break;

@@ -1,5 +1,7 @@
-#ifndef _COM_H_
-#define _COM_H_
+#ifndef _WINCOM_H_
+#define _WINCOM_H_
+
+#include <windows.h>
 
 // circullar buffer struct
 typedef struct {
@@ -10,8 +12,6 @@ typedef struct {
 	unsigned int ndat; // number of datas
 } cir_buf;
 
-
-#define NUM_OF_COM	32
 // USART struct
 typedef struct {
 	unsigned int ch;
@@ -63,16 +63,26 @@ typedef enum {
 #define USART_FLOW_HARD		(0 << 6)
 #define USART_FLOW_SOFT		(1 << 6)
 
-
 class COM {
 public:
-	int usart_open(unsigned int ch);
-	int usart_close(unsigned int ch);
-	unsigned int usart_read(unsigned int ch, char * buf, unsigned int addr, unsigned int size);
-	unsigned int usart_block_read(unsigned int ch, char * buf, unsigned int addr, unsigned int size);
-	unsigned int usart_write(unsigned int ch, const char *buf, unsigned int addr, unsigned int size);
-	int usart_ioctrl(unsigned int ch, unsigned int cmd, unsigned int arg);
-
+	static int open(unsigned int ch);
+	static int open2(unsigned int ch, unsigned int baudrate);
+	static int close(unsigned int ch);
+	static unsigned int read(unsigned int ch, char * buf, unsigned int addr, unsigned int size);
+	static unsigned int block_read(unsigned int ch, char * buf, unsigned int addr, unsigned int size);
+	static unsigned int write(unsigned int ch, const char *buf, unsigned int addr, unsigned int size);
+	static int ioctrl(unsigned int ch, unsigned int cmd, unsigned int arg);
 };
 
-#endif
+/*************************************
+EXAMPLE:
+	if(COM::open(port) != 0) {
+		printf("failed to open COM%d", port);
+		return -1;
+	} 
+	COM::ioctrl(port, USART_CMD_MODE, USART_STOP_1BIT | USART_DATA_8BIT | USART_PARITY_NONE);
+	COM::ioctrl(port, USART_CMD_BAUDRATE, 115200);
+	COM::ioctrl(port, USART_CMD_BUFLEN, 10240);
+**************************************/
+
+#endif /* ifndef _WINCOM_H_ */

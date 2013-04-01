@@ -1,5 +1,6 @@
 #include "stdafx.h"
 
+#define NUM_OF_COM	32
 
 static usart_t * usart[NUM_OF_COM];
 
@@ -148,7 +149,7 @@ DWORD WINAPI usart_write_thread(LPVOID lpThreadParameter) {
 }
 
 
-int COM::usart_open(unsigned int ch) {
+int COM::open(unsigned int ch) {
 	COMMTIMEOUTS com_timeout;
 	wchar_t com_name[] = L"COMn";
 
@@ -213,7 +214,7 @@ int COM::usart_open(unsigned int ch) {
 	}
 }
 
-int COM::usart_close(unsigned int ch) {
+int COM::close(unsigned int ch) {
 	if(ch > (NUM_OF_COM - 1)) {
 		return -1;
 	}
@@ -242,7 +243,7 @@ int COM::usart_close(unsigned int ch) {
 	return 0;
 }
 
-unsigned int COM::usart_read(unsigned int ch, char * buf, unsigned int addr, unsigned int size) {
+unsigned int COM::read(unsigned int ch, char * buf, unsigned int addr, unsigned int size) {
 	unsigned int count;
 	
 	// wait for read circle buffer free, NO TIMEOUT
@@ -254,7 +255,7 @@ unsigned int COM::usart_read(unsigned int ch, char * buf, unsigned int addr, uns
 	return count;
 }
 
-unsigned int COM::usart_block_read(unsigned int ch, char * buf, unsigned int addr, unsigned int size) {
+unsigned int COM::block_read(unsigned int ch, char * buf, unsigned int addr, unsigned int size) {
 	unsigned int count = 0;
 	unsigned int total = 0;
 	
@@ -284,7 +285,7 @@ unsigned int COM::usart_block_read(unsigned int ch, char * buf, unsigned int add
 	return total;
 }
 
-unsigned int COM::usart_write(unsigned int ch, const char *buf, unsigned int addr, unsigned int size) {
+unsigned int COM::write(unsigned int ch, const char *buf, unsigned int addr, unsigned int size) {
 	// wait for write circle buffer free
 	WaitForSingleObject(usart[ch]->cir_w_mutex, INFINITE);
 	// store datas to circle buffer
@@ -297,7 +298,7 @@ unsigned int COM::usart_write(unsigned int ch, const char *buf, unsigned int add
 	return size;
 }
 
-int COM::usart_ioctrl(unsigned int ch, unsigned int cmd, unsigned int arg) {
+int COM::ioctrl(unsigned int ch, unsigned int cmd, unsigned int arg) {
 	switch(cmd)	{
 		// mode settings
 		case USART_CMD_MODE:
@@ -386,4 +387,14 @@ int COM::usart_ioctrl(unsigned int ch, unsigned int cmd, unsigned int arg) {
 	} else {
 		return -1;
 	}
+}
+
+int COM::open2(unsigned int port, unsigned int baudrate) {
+	if(COM::open(port) != 0) {
+		return -1;
+	} 
+	COM::ioctrl(port, USART_CMD_MODE, USART_STOP_1BIT | USART_DATA_8BIT | USART_PARITY_NONE);
+	COM::ioctrl(port, USART_CMD_BAUDRATE, baudrate);
+	COM::ioctrl(port, USART_CMD_BUFLEN, 10240);
+	return 0;
 }
