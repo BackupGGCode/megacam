@@ -888,6 +888,8 @@ int cmd_package_listen() {
 	char *buf;
 	int count;
 	int c;
+	uint16 var0[2];
+	uint16 var1[2];
 	
 	while (1) {
 		buf = (char *)&cp;
@@ -970,6 +972,17 @@ int cmd_package_listen() {
 		break;
 		case CMD_OVHW_RESET:
 			// PB4 MISO
+		break;
+		case CMD_EXREAD:
+			memcpy(var0, cp.para1, sizeof(cp.para1));
+			memcpy(var1, cp.para2, sizeof(cp.para2));
+			
+			if(var0[0] > 640 || var1[0] > 640 || var1[0] > var0[0] ||\
+			   var0[1] > 480 || var1[1] > 480 || var1[1] > var0[1]) {
+				UART_WRITE(CMD_FAILED);
+			}
+			UART_WRITE(CMD_PASS);
+			ex_cam_read(var0[0], var0[1], var1[0], var1[1]);
 		break;
 		default:
 			continue;
