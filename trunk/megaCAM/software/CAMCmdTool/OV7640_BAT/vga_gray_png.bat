@@ -1,1 +1,0 @@
-CAMCmdTool.exe 3 115200 bd 230400 sccb-addr 0x42 clrbit 0x14 5 setbit 0x28 6 shot 640 480 gray png bd 115200
