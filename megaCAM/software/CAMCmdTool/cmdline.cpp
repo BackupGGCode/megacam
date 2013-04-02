@@ -32,7 +32,7 @@
 #include "stdafx.h"
 
 /* Defines the maximum number of arguments that can be parsed. */
-#define CMDLINE_MAX_ARGS	4
+#define CMDLINE_MAX_ARGS	8
 
 /**
  * Process a command line string into arguments and execute the command.

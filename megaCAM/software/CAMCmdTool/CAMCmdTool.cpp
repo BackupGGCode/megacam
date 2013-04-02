@@ -10,6 +10,9 @@
 #endif
 
 
+using namespace std;
+
+
 // 唯一的应用程序对象
 
 CWinApp theApp;
@@ -45,6 +48,14 @@ typedef enum {
 } image_t;
 
 class Camera {
+public:
+	Camera(void) {
+		this->ready = FALSE;
+	}
+
+private:
+	bool ready;
+
 public:
 	int port;
 	int baudrate;
@@ -126,8 +137,12 @@ int echo(void) {
 int open(int port, int baudrate, int timeout) {
 	if(init_com(port, baudrate, timeout) != 0)
 		return -1;
+
 	if(this->echo() != 0)
 		return -1;
+
+	this->ready = TRUE;
+
 	return 0;
 }
 
@@ -137,23 +152,34 @@ int close(void) {
 }
 
 int reconfig_usart_bandrate(unsigned int baudrate) {
+	if (!this->ready)
+		return -1;
 	return write_cmd(this->port, CMD_CONF_BDR, baudrate, NULL, this->timeout);
 }
 
-int read_ovreg(int addr) {	
+int read_ovreg(int addr) {
+	if (!this->ready)
+		return -1;
+
 	write_cmd(this->port, CMD_READ_OVREG, addr, NULL, this->timeout);
 	return uart_timeout_read(this->port, this->timeout);
 }
 
 int write_ovreg(int addr, int value) {
+	if (!this->ready)
+		return -1;
 	return write_cmd(this->port, CMD_WRITE_OVREG, addr, value, this->timeout);
 }
 
 int config_ovaddr(int dev_addr) {
+	if (!this->ready)
+		return -1;	
 	return write_cmd(this->port, CMD_CONF_OVADR, dev_addr, NULL, this->timeout);
 }
 
 int capture(void) {
+	if (!this->ready)
+		return -1;	
 	return write_cmd(this->port, CMD_CAPTURE, NULL, NULL, this->timeout);
 }
 
@@ -162,7 +188,10 @@ int read(char *buffer, int start_pixel, int length) {
 	int count;
 	unsigned int time_mark;
 	int pre_cache;
-	
+
+	if (!this->ready)
+		return -1;
+
 	if(write_cmd(this->port, CMD_READ, start_pixel, length, this->timeout) != 0) {
 		return -1;
 	}
@@ -172,7 +201,7 @@ int read(char *buffer, int start_pixel, int length) {
 	count = 0;
 	pre_cache = 0;
 	while(1) {
-		nbytes = COM::read(this->port, buffer + count, 0, 10);
+		nbytes = COM::read(this->port, buffer + count, 0, 1);
 		if(nbytes) {
 			count += nbytes;
 			if(count * 100 / length > pre_cache) {
@@ -199,7 +228,7 @@ int read(char *buffer, int start_pixel, int length) {
 };
 
 
-Camera myCamera;
+Camera myCamera = Camera();
 
 
 #if (0)
@@ -327,7 +356,7 @@ public:
 					G = ((temp[0] << 5) & 0xE0) | ((temp[1] >> 3) & 0x1C);
 					B = (temp[1] << 3) & 0xF8;
 					/* rgb turn out bgr ... */
-					image.SetPixelRGB(j, i, B, G, R);
+					image.SetPixelRGB(j, i, R, G, B);
 				break;
 				case IMAGE_FORMAT_RGB555:
 				break;
@@ -440,27 +469,242 @@ static int configRAW(int port) {
 }
 #endif
 
-static void help(const char *cmd) {
-	return;
+#define MAX_ARGU_LEN	128
+#define IS_09_OR_AZ_OR_az(ch)\
+	(((ch >= '0' && ch <= '9')||(ch >= 'a' && ch <= 'z')||\
+	(ch >= 'A' && ch <= 'Z')) ? 1 : 0)
+
+typedef enum {
+	VALUE_TYPE_INT,
+	VALUE_TYPE_STRING,
+	VALUE_TYPE_FLOAT,
+} value_t;
+
+typedef struct {
+	const char *name;
+	value_t type;
+	void *vptr;
+} arg_t;
+
+
+int read_args(arg_t *entry, const char *prv, int argc, char **argv) {
+	int i, j;
+	int skip;
+	char cmd[MAX_ARGU_LEN];
+	char value[MAX_ARGU_LEN];
+	int count = 0;
+	int ret;
+	int prv_len = strlen(prv);
+
+	for(i = 0; i < argc; i ++) {
+		skip = 0;
+		/* the prev-chars match or not */
+		for(j = 0; j < prv_len; j ++) {
+			if(argv[i][j] != prv[j]) {
+				skip = 1;
+				break;
+			}
+		}
+		/* match */
+		if(skip == 0) {
+			// read command
+			for(j = prv_len; IS_09_OR_AZ_OR_az(argv[i][j]) && j < strlen(argv[i]); j ++);
+			if(j == prv_len)
+				continue;
+			memcpy(cmd, &argv[i][prv_len], j - prv_len);
+			cmd[j - prv_len] = 0;
+			
+			// skip any thing between cmd and value
+			for(; !IS_09_OR_AZ_OR_az(argv[i][j]) && j < strlen(argv[i]); j ++);
+			if (j == strlen(argv[i]))
+				continue;
+			memcpy(value, &argv[i][j], strlen(argv[i]) - j);
+			value[strlen(argv[i]) - j] = 0;
+
+			/* now we got command and value */
+			for(j = 0; entry[j].name; j ++) {
+				if(strcmp(entry[j].name, cmd) == 0) {
+					switch(entry[j].type) {
+					case VALUE_TYPE_INT:
+						entry[j].vptr = malloc(sizeof(int));
+						if(entry[j].vptr) {
+							if(value[0] == '0' && (value[1] == 'x' || 
+								value[1] == 'X')) {
+								ret = sscanf(value, "%x", entry[j].vptr);
+							} else {
+								ret = sscanf(value, "%d", entry[j].vptr);
+							}
+							if(ret != 0) {
+								count ++;
+							} else {
+								free(entry[j].vptr);
+								entry[j].vptr = NULL;
+							}
+						}
+					break;	
+					case VALUE_TYPE_STRING:
+						entry[j].vptr = malloc(strlen(value) + 1);
+						if(entry[j].vptr) {
+							if(sscanf(value, "%s", entry[j].vptr)) {
+								count ++;
+							} else {
+								free(entry[j].vptr);
+								entry[j].vptr = NULL;
+							}
+						}
+					break;
+					case VALUE_TYPE_FLOAT:
+						entry[j].vptr = malloc(sizeof(float));
+						if(entry[j].vptr) {
+							if(sscanf(value, "%f", entry[j].vptr)) {
+								count ++;
+							} else {
+								free(entry[j].vptr);
+								entry[j].vptr = NULL;
+							}
+						}
+					break;
+					default:
+					break;
+					}
+				}
+			}
+
+		}
+	}
+	return count;
+}
+
+
+void release_argus(arg_t *entry) {
+	for(int i = 0; entry[i].name; i ++) {
+		if(entry[i].vptr) {
+			free(entry[i].vptr);
+		}
+	}
+}
+
+#if (0)
+int test() {
+	arg_t sccb_addr_arg[] = {
+	{"addr", VALUE_TYPE_INT, NULL},
+	{"value", VALUE_TYPE_INT, NULL},
+	{"percent", VALUE_TYPE_FLOAT, NULL},
+	{"str", VALUE_TYPE_STRING, NULL},
+	{NULL, VALUE_TYPE_INT, NULL},
+	};
+
+	const char *buffer[] = {"-addr=100", "-value=10", "-percent=0.58", "-str=things"};
+
+	if(read_args(sccb_addr_arg, "-", 1, 4, (char **)buffer) == 4) {
+		printf("addr = 0x%x\n", *(unsigned int *)sccb_addr_arg[0].vptr);
+		printf("value = 0x%x\n", *(unsigned int *)sccb_addr_arg[1].vptr);
+		printf("percent = %f\n", *(float *)sccb_addr_arg[2].vptr);
+		printf("str = %s\n", (char *)sccb_addr_arg[3].vptr);
+	}
+	release_argus(sccb_addr_arg);
+	return 0;
+}
+#endif
+
+
+static int open(int argc, char **argv);
+static int sccb_addr(int argc, char **argv);
+static int wreg(int argc, char **argv);
+static int rreg(int argc, char **argv);
+static int clrbit(int argc, char **argv);
+static int setbit(int argc, char **argv);
+static int bd(int argc, char **argv);
+static int shoot(int argc, char **argv);
+static int help(int argc, char **argv);
+
+
+tCmdLineEntry g_sCmdTable[] = {
+	{"open", open, "open [COM] [baudrate] [timeout] 打开摄像头所在串口\n\
+    -COM: 串口号\n\
+    -baudrate: 串口波特率\n\
+    -timeout: 串口数据最大超时，毫秒单位\n\
+    Example: open -COM=3 -baudrate=115200 -timeout=500\n"},
+
+	{"set-sccb-addr", sccb_addr, "set-sccb-addr [addr] 设置SCCB总线器件地址\n\
+    -addr: 器件地址\n\
+    Example: set-sccb-addr -addr=0x42\n"},
+
+	{"write-reg", wreg, "write-reg [addr] [value] 写OV芯片寄存器\n\
+    -addr: 寄存器地址\n\
+    -value: 寄存器值\n\
+    Example: write-reg -addr=0x14 -value=0x24\n"},
+
+	{"read-reg", rreg, "read-reg [addr] 读取OV芯片寄存器\n\
+    -addr: 寄存器地址\n\
+    Example: read-reg -addr=0x0a\n"},
+	
+	{"clear-reg-bit", clrbit, "clear-reg-bit [addr] [bitnum] OV寄存器位清零\n\
+    -addr: 寄存器地址\n\
+    -bitnum: 寄存器位\n\
+    Example: clear-reg-bit -addr=0x14 -bitnum=5\n"},
+
+	{"set-reg-bit", setbit, "set-reg-bit [addr] [bitnum] OV寄存器位置位\n\
+    -addr: 寄存器地址\n\
+    -bitnum: 寄存器位\n\
+    Example: set-reg-bit -addr=0x14 -bitnum=5\n"},
+	
+	{"reset-bd", bd, "reset-bd [baudrate] 重置摄像头串口波特率\n\
+    -baudrate: 串口波特率\n\
+    Example: reset-bd -baudrate=115200\n"},
+	{"shoot", shoot, "shoot [w] [h] [t] [s] 拍摄一幅图像\n\
+    -w: 图像宽度\n\
+    -h: 图像长度\n\
+    -t: 图像类型，可选值为 rgb565, rgb555, raw, gray\n\
+    -s: 保存类型，可选值为 jpg, png\n\
+    Example: shoot -w=640 -h=480 -t=gray -s=jpg\n"},
+
+	{"help", help, "help 显示帮助信息"},
+	{0, 0, 0}
+};
+
+
+static void program_header() {
+	printf("****************************************************************\n");
+	printf("*           megaCAM command tool V1.2 by AliveHex              *\n");
+	printf("*           AliveHex@gmail.com                                 *\n");
+	printf("*           Build %s                                  *\n", __DATE__);
+	printf("****************************************************************\n");
+	printf("<- type \"quit\" to stop this program ->\n"); 
+}
+
+static int help(int argc, char **argv) {
+	if(argc < 2) {
+		/* all the help message */
+		for(int i = 0; i < sizeof(g_sCmdTable) / sizeof(tCmdLineEntry) - 1; i ++) {
+			printf("%s\n", g_sCmdTable[i].pcHelp);
+		}
+	}
+	return 0;
 }
 
 static int sccb_addr(int argc, char **argv) {
 	int addr;
+	int ret = -1;
+	arg_t sccb_addr_arg_fmt[] = { {"addr", VALUE_TYPE_INT, NULL},{NULL, VALUE_TYPE_INT, NULL} };
+	
+	if(read_args(sccb_addr_arg_fmt, "-", argc - 1, argv + 1) == 1) {
+		addr = *(int *)sccb_addr_arg_fmt[0].vptr;
+		ret = 0;
+	} 
+	release_argus(sccb_addr_arg_fmt);
 
-	if(argc < 2) {
-		help("sccb-addr");
+	if(ret != 0)
+		return -1;
+	
+	printf("set sccb device address=[0x%x] ... ", addr);
+	
+	if(myCamera.config_ovaddr(addr)!= 0) {
+		printf("[error]");
 		return -1;
 	} else {
-		sscanf(argv[1], "%x", &addr);
-		
-		printf("set sccb device address=[0x%x] ... ", addr);
-		if(myCamera.config_ovaddr(addr)!= 0) {
-			printf("[error]\n");
-			return -1;
-		} else {
-			printf("[ok]\n");
-			return 0;
-		}
+		printf("[ok]");
+		return 0;
 	}
 }
 
@@ -468,22 +712,27 @@ static int open(int argc, char **argv) {
 	int port;
 	int baudrate;
 	int timeout;
+	int ret = -1;
+	arg_t open_arg_fmt[] = { {"COM", VALUE_TYPE_INT, NULL},  
+		{"baudrate", VALUE_TYPE_INT, NULL}, {"timeout", VALUE_TYPE_INT, NULL},{NULL, VALUE_TYPE_INT, NULL} };
 
-	if(argc < 4) {
-		help("open");
+	if(read_args(open_arg_fmt, "-", argc - 1, argv + 1) == 3) {
+		port = *(int *)open_arg_fmt[0].vptr;
+		baudrate = *(int *)open_arg_fmt[1].vptr;
+		timeout = *(int *)open_arg_fmt[2].vptr;
+		ret = 0;
+	} 
+	release_argus(open_arg_fmt);
+
+	if(ret != 0)
 		return -1;
-	}
-
-	sscanf(argv[1], "%d", &port);
-	sscanf(argv[2], "%d", &baudrate);
-	sscanf(argv[3], "%d", &timeout);
 
 	printf("open camera on com%d[%d], timeout[%d]ms ... ", port, baudrate, timeout);
 	if(myCamera.open(port, baudrate, timeout) != 0) {
-		printf("[error]\n");
+		printf("[error]");
 		return -1;
 	} else {
-		printf("[ok]\n");
+		printf("[ok]");
 		return 0;
 	}
 }
@@ -491,203 +740,219 @@ static int open(int argc, char **argv) {
 static int wreg(int argc, char **argv) {
 	int addr;
 	int value;
+	int ret = -1;
+	arg_t fmt[] = { {"addr", VALUE_TYPE_INT, NULL}, {"value", VALUE_TYPE_INT, NULL}, {NULL, VALUE_TYPE_INT, NULL} };
 
-	if(argc < 3) {
-		help("wreg");
+	if(read_args(fmt, "-", argc - 1, argv + 1) == 2) {
+		addr = *(int *)fmt[0].vptr;
+		value = *(int *)fmt[1].vptr;
+		ret = 0;
+	} 
+	release_argus(fmt);
+
+	if(ret != 0)
+		return -1;
+		
+	printf("write value[0x%x] to register[0x%x] ... ", value, addr);
+	if(myCamera.write_ovreg(addr, value) != 0) {
+		printf("[error]");
 		return -1;
 	} else {
-		sscanf(argv[1], "%x", &addr);
-		sscanf(argv[2], "%x", &value);
-		
-		printf("write value[0x%x] to register[0x%x] ... ", value, addr);
-		if(myCamera.write_ovreg(addr, value) != 0) {
-			printf("[error]\r\n");
-			return -1;
-		} else {
-			printf("[ok]\r\n");
-			return 0;
-		}
+		printf("[ok]");
+		return 0;
 	}
 }
 
 static int rreg(int argc, char **argv) {
 	int addr;
 	int value;
+	int ret = -1;
+	arg_t fmt[] = { {"addr", VALUE_TYPE_INT, NULL}, {NULL, VALUE_TYPE_INT, NULL} };
 
-	if(argc < 3) {
-		help("rreg");
+	if(read_args(fmt, "-", argc - 1, argv + 1) == 1) {
+		addr = *(int *)fmt[0].vptr;
+		ret = 0;
+	} 
+	release_argus(fmt);
+
+	if(ret != 0)
+		return -1;
+					
+	printf("read register[0x%x] ... ", addr);
+	value = myCamera.read_ovreg(addr);
+	if(value == -1) {
+		printf("[error]");
 		return -1;
 	} else {
-		sscanf(argv[1], "%x", &addr);
-					
-		printf("read register[0x%x] ... ", addr);
-		value = myCamera.read_ovreg(addr);
-		if(value == -1) {
-			printf("[error]\n");
-			return -1;
-		} else {
-			printf("[ok][reg=0x%x]\r\n", value); 
-			return 0;
-		}
+		printf("[ok][reg=0x%x]", value); 
+		return 0;
 	}
 }
 
 static int clrbit(int argc, char **argv) {
 	int addr;
 	int bitNum;
+	int ret = -1;
+	arg_t fmt[] = { {"addr", VALUE_TYPE_INT, NULL}, {"bitnum", VALUE_TYPE_INT, NULL}, {NULL, VALUE_TYPE_INT, NULL} };
 
-	if(argc < 3) {
-		help("clrbit");
+	if(read_args(fmt, "-", argc - 1, argv + 1) == 2) {
+		addr = *(int *)fmt[0].vptr;
+		bitNum = *(int *)fmt[1].vptr;
+		ret = 0;
+	} 
+	release_argus(fmt);
+
+	if(ret != 0)
+		return -1;
+		
+	printf("clear register[0x%x]-bit[%d] ... ", addr, bitNum);
+	if(regBitClear(addr, (1 << bitNum)) != 0) {
+		printf("[error]");
 		return -1;
 	} else {
-		sscanf(argv[1], "%x", &addr);
-		sscanf(argv[2], "%d", &bitNum);
-		
-		printf("clear register[0x%x]-bit[%d] ... ", addr, bitNum);
-		if(regBitClear(addr, (1 << bitNum)) != 0) {
-			printf("[error]\n");
-			return -1;
-		} else {
-			printf("[ok][reg=0x%x]\n", myCamera.read_ovreg(addr));
-			return 0;
-		}
+		printf("[ok][reg=0x%x]", myCamera.read_ovreg(addr));
+		return 0;
 	}
 }
 
 static int setbit(int argc, char **argv) {
 	int addr;
 	int bitNum;
+	int ret = -1;
+	arg_t fmt[] = { {"addr", VALUE_TYPE_INT, NULL}, {"bitnum", VALUE_TYPE_INT, NULL}, {NULL, VALUE_TYPE_INT, NULL} };
 
-	if(argc < 3) {
-		help("setbit");
+	if(read_args(fmt, "-", argc - 1, argv + 1) == 2) {
+		addr = *(int *)fmt[0].vptr;
+		bitNum = *(int *)fmt[1].vptr;
+		ret = 0;
+	} 
+	release_argus(fmt);
+
+	if(ret != 0)
+		return -1;
+		
+	printf("set register[0x%x]-bit[%d] ... ", addr, bitNum);
+	if(regBitSet(addr, (1 << bitNum)) != 0) {
+		printf("[error]");
 		return -1;
 	} else {
-		sscanf(argv[1], "%x", &addr);
-		sscanf(argv[2], "%d", &bitNum);
-		
-		printf("set register[0x%x]-bit[%d] ... ", addr, bitNum);
-		if(regBitSet(addr, (1 << bitNum)) != 0) {
-			printf("[error]\n");
-			return -1;
-		} else {
-			printf("[ok][reg=0x%x]\n", myCamera.read_ovreg(addr));
-			return 0;
-		}
-	}
-	return 0;
-}
-
-static int bd(int argc, char **argv) {
-	int bd;
-
-	if(argc < 2) {
-		help("bd");
-		return -1;
-	} else {
-		sscanf(argv[1], "%d", &bd);
-		
-		printf("set camera baudrate=[%d] ... ", bd);
-		if(myCamera.reconfig_usart_bandrate(bd) != 0) {
-			printf("[error]\n");
-			return -1;
-		} else {
-			printf("[ok]\n");
-			myCamera.close();
-			Sleep(500);
-			printf("reopen com%d[%d] ... ", myCamera.port, myCamera.baudrate);
-			if(myCamera.open(myCamera.port, bd, myCamera.timeout) != 0) {
-				printf("[error]\n");
-				return -1;
-			} else {
-				printf("[ok]\n");
-				return 0;
-			}
-		}
-	}
-}
-
-static int shot(int argc, char **argv) {
-	image_t type;
-	int width;
-	int height;
-	GUID sformat;
-	int fsize;
-	
-	if(argc < 5) {
-		help("shot");
-		return -1;
-	} else {
-		sscanf(argv[1], "%d", &width);
-		sscanf(argv[2], "%d", &height);
-		
-		if(strcmp(argv[3], "rgb565") == 0) {
-			type = IMAGE_FORMAT_RGB565;
-			fsize = width * height * 2;
-		} else if(strcmp(argv[3], "rgb555") == 0) {
-			type = IMAGE_FORMAT_RGB555;
-			fsize = width * height * 2;
-		} else if(strcmp(argv[3], "raw") == 0) {
-			type = IMAGE_FORMAT_RAW;
-			fsize = width * height;
-		} else if(strcmp(argv[3], "gray") == 0) {
-			type = IMAGE_FORMAT_GRAY8;
-			fsize = width * height;
-		} else {
-			printf("unknown image format\n");
-			return -1;
-		}
-		
-		time_t rawtime;
-		struct tm * timeinfo;
-		wchar_t wbuffer[128];
-
-		time(&rawtime);
-		timeinfo = localtime (&rawtime);
-
-		if(strcmp(argv[4], "jpg") == 0) {
-			sformat = Gdiplus::ImageFormatJPEG;
-			wcsftime(wbuffer, 128, L"%Y-%m-%d-%H%M%S.jpg", timeinfo);
-		} else if(strcmp(argv[4], "png") == 0) {
-			sformat = Gdiplus::ImageFormatPNG;
-			wcsftime(wbuffer, 128, L"%Y-%m-%d-%H%M%S.png", timeinfo);
-		} else {
-			printf("unknown image format\n");
-			return -1;
-		}
-		printf("capture image ... ");
-		if(myCamera.capture() != 0) {
-			printf("[error]\n");
-			return -1;
-		} else {
-			printf("[ok]\n");
-		}
-		
-		printf("read image ... ");
-		if(myCamera.read(buffer, 0, fsize) != 0) {
-			printf("[failed]\n");
-			return -1;
-		} else {
-			printf("[ok]\n");
-		}
-		wprintf(L"save image file %s ... ", wbuffer);
-		image::save_image(wbuffer, buffer, width, height, type, sformat);
-		printf("[ok]\n");
+		printf("[ok][reg=0x%x]", myCamera.read_ovreg(addr));
 		return 0;
 	}
 }
 
+static int bd(int argc, char **argv) {
+	int bd;
+	int ret = -1;
+	arg_t fmt[] = { {"baudrate", VALUE_TYPE_INT, NULL}, {NULL, VALUE_TYPE_INT, NULL} };
 
-tCmdLineEntry g_sCmdTable[] = {
-	{"open", open, ""},
-	{"sccb-addr", sccb_addr, ""},
-	{"wreg", wreg, ""},
-	{"rreg", rreg, ""},
-	{"clrbit", clrbit, ""},
-	{"setbit", setbit, ""},
-	{"bd", bd, ""},
-	{"shot", shot, ""},
-	{0, 0, 0}
-};
+	if(read_args(fmt, "-", argc - 1, argv + 1) == 1) {
+		bd = *(int *)fmt[0].vptr;
+		ret = 0;
+	} 
+	release_argus(fmt);
+
+	if(ret != 0)
+		return -1;
+		
+	printf("reset camera baudrate=[%d] ... ", bd);
+	if(myCamera.reconfig_usart_bandrate(bd) != 0) {
+		printf("[error]");
+		return -1;
+	} else {
+		printf("[ok]");
+		myCamera.close();
+		myCamera.baudrate = bd;
+		Sleep(500);
+		printf("reopen COM%d[%d] ... ", myCamera.port, myCamera.baudrate);
+		if(myCamera.open(myCamera.port, bd, myCamera.timeout) != 0) {
+			printf("[error]");
+			return -1;
+		} else {
+			printf("[ok]");
+			return 0;
+		}
+	}
+}
+
+static int shoot(int argc, char **argv) {
+	image_t type;
+	int width;
+	int height;
+	char image_type[16];
+	char save_type[16];
+	GUID sformat;
+	int fsize;
+	int ret = -1;
+	arg_t fmt[] = { {"w", VALUE_TYPE_INT, NULL}, {"h", VALUE_TYPE_INT, NULL}, 
+		{"t", VALUE_TYPE_STRING, NULL}, {"s", VALUE_TYPE_STRING, NULL}, {NULL, VALUE_TYPE_INT, NULL} };
+
+	if(read_args(fmt, "-", argc - 1, argv + 1) == 4) {
+		width = *(int *)fmt[0].vptr;
+		height = *(int *)fmt[1].vptr;
+		strcpy(image_type, (char *)fmt[2].vptr);
+		strcpy(save_type, (char *)fmt[3].vptr);
+		ret = 0;
+	} 
+	release_argus(fmt);
+
+	if(ret != 0)
+		return -1;
+
+	if(strcmp(image_type, "rgb565") == 0) {
+		type = IMAGE_FORMAT_RGB565;
+		fsize = width * height * 2;
+	} else if(strcmp(image_type, "rgb555") == 0) {
+		type = IMAGE_FORMAT_RGB555;
+		fsize = width * height * 2;
+	} else if(strcmp(image_type, "raw") == 0) {
+		type = IMAGE_FORMAT_RAW;
+		fsize = width * height;
+	} else if(strcmp(image_type, "gray") == 0) {
+		type = IMAGE_FORMAT_GRAY8;
+		fsize = width * height;
+	} else {
+		printf("unknown image format");
+		return -1;
+	}
+	
+	time_t rawtime;
+	struct tm * timeinfo;
+	wchar_t wbuffer[128];
+
+	time(&rawtime);
+	timeinfo = localtime (&rawtime);
+
+	if(strcmp(save_type, "jpg") == 0) {
+		sformat = Gdiplus::ImageFormatJPEG;
+		wcsftime(wbuffer, 128, L"%Y-%m-%d-%H%M%S.jpg", timeinfo);
+	} else if(strcmp(save_type, "png") == 0) {
+		sformat = Gdiplus::ImageFormatPNG;
+		wcsftime(wbuffer, 128, L"%Y-%m-%d-%H%M%S.png", timeinfo);
+	} else {
+		printf("unknown image format");
+		return -1;
+	}
+	printf("capture image ... ");
+	if(myCamera.capture() != 0) {
+		printf("[error]");
+		return -1;
+	} else {
+		printf("[ok]");
+	}
+	
+	printf("read image ... ");
+	if(myCamera.read(buffer, 0, fsize) != 0) {
+		printf("[failed]");
+		return -1;
+	} else {
+		printf("[ok]");
+	}
+	wprintf(L"save image file %s ... ", wbuffer);
+	image::save_image(wbuffer, buffer, width, height, type, sformat);
+	printf("[ok]");
+	return 0;
+}
 
 
 #define MINIUM_ARGC	4
@@ -698,6 +963,7 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 	CImage image;
 	TCHAR *initFname;
 	char lineBuffer[256];
+	char prevCmd[256];
 
 	// 初始化 MFC 并在失败时显示错误
 	if (!AfxWinInit(::GetModuleHandle(NULL), NULL, ::GetCommandLine(), 0))
@@ -707,10 +973,12 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 		nRetCode = 1;
 	}
 	else
-	{
+	{	
+		program_header();
+
 		if(argc < 2) {
 			int c;
-			printf("Warning: Init file is not specified\n");
+			printf("<- Warning: Init file is not specified ->\n");
 			printf("Press ESC to give up, ENTER to continue\n");
 			while (1) {
 				c = _getch();
@@ -728,15 +996,51 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 				printf("Init file open error\n");
 				return -1;
 			} else {
-				wprintf(L"Init file = %s\n", initFname); 
+				wprintf(L"<- Init file = %s ->\n", initFname); 
 			}
 			while(fgets(lineBuffer, sizeof(lineBuffer), fh) != NULL) {
-				CmdLineProcess(lineBuffer);
+				memcpy(prevCmd, lineBuffer, sizeof(lineBuffer));
+				if(CmdLineProcess(lineBuffer) != CMDLINE_BAD_CMD) {
+					printf("\n");
+				}
 			}
 			fclose(fh);
-
-			COM::close(3);
 		}
+		int count = 0;
+		int c;
+		printf("\n>");
+
+		while (1) {
+			//lineBuffer[count] = _getch();
+			c = _getch();
+			if(c == 0x0d) {
+				//_putch(c);
+				lineBuffer[count]= 0;
+				if(strcmp(lineBuffer, "quit") == 0)
+					break;
+				if(lineBuffer[0] == 0) {
+					printf("%s", prevCmd);
+					memcpy(lineBuffer, prevCmd, sizeof(lineBuffer));
+				} else {
+					memcpy(prevCmd, lineBuffer, sizeof(lineBuffer));
+				}
+				_putch('\n');
+				CmdLineProcess(lineBuffer);	
+				count = 0;
+				printf("\n>");
+			} else if(c == '\b') {
+				if(count >= 1) {
+					count --;
+					_putch('\b');
+					_putch(' ');
+					_putch('\b');
+				}
+			} else {
+				lineBuffer[count ++] = c;
+				_putch(c);
+			}
+		}
+		myCamera.close();
 
 #if (0)
 		if(argc < MINIUM_ARGC) {
