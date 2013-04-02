@@ -59,6 +59,8 @@ typedef enum {
 #define CMD_ECHO			0x85
 #define CMD_READ			0x86
 #define CMD_OVHW_RESET		0x87
+#define CMD_EXREAD			0x88
+
 #define CMD_PASS			0x00
 #define CMD_FAILED			0x01
 

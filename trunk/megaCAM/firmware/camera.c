@@ -186,6 +186,24 @@ void cam_read(unsigned long start, unsigned long len) {
 	FIFO_OUTPUT_DISABLE(); //#RE high too
 }
 
+void ex_cam_read(uint16 width, uint16 height, uint16 x, uint16 y) {
+	unsigned long i;
+	unsigned long j;
+	
+	FIFO_OUTPUT_ENABLE(); // #RE low too
+	reset_fifo_read();
+	
+	for(i = 0; i < height; i ++) {
+		for(j = 0; j < width; j ++) {
+			FIFO_RCLK_LOW();
+			if(j < x && i < y) {
+				UART_WRITE(FIFO_READ());
+			}
+			FIFO_RCLK_HIGH();
+		}
+	}	
+	FIFO_OUTPUT_DISABLE(); //#RE high too
+}
 
 
 #if (1)
