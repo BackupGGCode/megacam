@@ -1,0 +1,1 @@
+CAMCmdTool.exe baudrate.ini

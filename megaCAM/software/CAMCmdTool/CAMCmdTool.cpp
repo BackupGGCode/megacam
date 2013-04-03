@@ -30,6 +30,9 @@ using namespace std;
 #define CMD_CAPTURE			0x84
 #define CMD_ECHO			0x85
 #define CMD_READ			0x86
+#define CMD_OVHW_RESET		0x87
+#define CMD_EXREAD			0x88
+
 #define CMD_PASS			0x00
 #define CMD_FAILED			0x01
 
@@ -147,7 +150,10 @@ int open(int port, int baudrate, int timeout) {
 }
 
 int close(void) {
-	COM::close(this->port);
+	if(this->ready) {
+		COM::close(this->port);
+		this->ready = FALSE;
+	}
 	return 0;
 }
 
@@ -212,9 +218,9 @@ int read(char *buffer, int start_pixel, int length) {
 			time_mark = GetTickCount();
 		} else {
 			if((GetTickCount() - time_mark) > timeout) {
-				printf("\n-> timeout! <-\n");
-				COM::close(port);
-				getchar();
+				printf("\n-> timeout! <-");
+				//COM::close(port);
+				//getchar();
 				return -1;
 			}
 		}
@@ -222,9 +228,61 @@ int read(char *buffer, int start_pixel, int length) {
 			break;
 		}		
 	}
-	printf("\r\n");
+	printf("\n");
 	return 0;
 }
+
+int read_ex(char *buffer, unsigned short width, unsigned short height, 
+			unsigned short window_width, unsigned short window_height) {
+	int nbytes;
+	int count;
+	unsigned int time_mark;
+	int pre_cache;
+	unsigned short val0[2] = {width, height};
+	unsigned short val1[2] = {window_width, window_height};
+	unsigned int para1, para2;
+	unsigned int length;
+
+	if (!this->ready)
+		return -1;
+
+	memcpy(&para1, val0, 4);
+	memcpy(&para2, val1, 4);
+
+	if(write_cmd(this->port, CMD_EXREAD, para1, para2, this->timeout) != 0) {
+		return -1;
+	}
+	length = window_width * window_height;
+
+	printf("waitting for data(%d) ...\n", length);
+	time_mark = GetTickCount();
+	count = 0;
+	pre_cache = 0;
+	while(1) {
+		nbytes = COM::read(this->port, buffer + count, 0, 1);
+		if(nbytes) {
+			count += nbytes;
+			if(count * 100 / length > pre_cache) {
+				pre_cache = count * 100 / length;
+				printf("\r");
+				printf("rcv %d bytes(%d%%)", count, pre_cache);
+			}
+			time_mark = GetTickCount();
+		} else {
+			if((GetTickCount() - time_mark) > timeout) {
+				printf("\n-> timeout! <-");
+				//COM::close(port);
+				//getchar();
+				return -1;
+			}
+		}
+		if(count >= length) {
+			break;
+		}		
+	}
+	printf("\n");
+	return 0;
+};
 };
 
 
@@ -616,6 +674,7 @@ static int clrbit(int argc, char **argv);
 static int setbit(int argc, char **argv);
 static int bd(int argc, char **argv);
 static int shoot(int argc, char **argv);
+static int shoot2(int argc, char **argv);
 static int help(int argc, char **argv);
 
 
@@ -652,12 +711,22 @@ tCmdLineEntry g_sCmdTable[] = {
 	{"reset-bd", bd, "reset-bd [baudrate] 重置摄像头串口波特率\n\
     -baudrate: 串口波特率\n\
     Example: reset-bd -baudrate=115200\n"},
+	
 	{"shoot", shoot, "shoot [w] [h] [t] [s] 拍摄一幅图像\n\
     -w: 图像宽度\n\
     -h: 图像长度\n\
     -t: 图像类型，可选值为 rgb565, rgb555, raw, gray\n\
     -s: 保存类型，可选值为 jpg, png\n\
     Example: shoot -w=640 -h=480 -t=gray -s=jpg\n"},
+
+	{"shoot2", shoot2, "shoot2 [w] [h] [wx] [wy] [t] [s] 获取裁剪过的图像\n\
+    -w: 原始图像宽度\n\
+    -h: 原始图像长度\n\
+    -wx: 裁剪图像宽度\n\
+    -wy: 裁剪图像长度\n\
+     -t: 图像类型，可选值为 rgb565, rgb555, raw, gray\n\
+	 -s: 保存类型，可选值为 jpg, png\n\
+	 Example: shoot2 -w=640 -h=480 -wx=100 -wy=100 -t=gray -s=png\n"},
 
 	{"help", help, "help 显示帮助信息"},
 	{0, 0, 0}
@@ -955,6 +1024,103 @@ static int shoot(int argc, char **argv) {
 }
 
 
+static int shoot2(int argc, char **argv) {
+	image_t type;
+	int width;
+	int height;
+	int window_width;
+	int window_height;
+	char image_type[16];
+	char save_type[16];
+	GUID sformat;
+	int ret = -1;
+
+	arg_t fmt[] = { {"w", VALUE_TYPE_INT, NULL}, {"h", VALUE_TYPE_INT, NULL},
+		{"wx", VALUE_TYPE_INT, NULL}, {"wy", VALUE_TYPE_INT, NULL},
+		{"t", VALUE_TYPE_STRING, NULL}, {"s", VALUE_TYPE_STRING, NULL},
+		{NULL, VALUE_TYPE_INT, NULL} };
+
+	if(read_args(fmt, "-", argc - 1, argv + 1) == (sizeof(fmt) / sizeof(arg_t) - 1)) {
+		width = *(int *)fmt[0].vptr;
+		height = *(int *)fmt[1].vptr;
+		window_width = *(int *)fmt[2].vptr;
+		window_height = *(int *)fmt[3].vptr;
+		strcpy(image_type, (char *)fmt[4].vptr);
+		strcpy(save_type, (char *)fmt[5].vptr);
+		ret = 0;
+	} 
+	release_argus(fmt);
+
+	if(ret != 0)
+		return -1;
+
+	if(strcmp(image_type, "rgb565") == 0) {
+		type = IMAGE_FORMAT_RGB565;
+		window_width *= 2;
+		width *= 2;
+	} else if(strcmp(image_type, "rgb555") == 0) {
+		type = IMAGE_FORMAT_RGB555;
+		window_width *= 2;
+		width *= 2;
+	} else if(strcmp(image_type, "raw") == 0) {
+		type = IMAGE_FORMAT_RAW;
+	} else if(strcmp(image_type, "gray") == 0) {
+		type = IMAGE_FORMAT_GRAY8;
+	} else {
+		printf("unknown image format");
+		return -1;
+	}
+	
+	time_t rawtime;
+	struct tm * timeinfo;
+	wchar_t wbuffer[128];
+
+	time(&rawtime);
+	timeinfo = localtime (&rawtime);
+
+	if(strcmp(save_type, "jpg") == 0) {
+		sformat = Gdiplus::ImageFormatJPEG;
+		wcsftime(wbuffer, 128, L"%Y-%m-%d-%H%M%S.jpg", timeinfo);
+	} else if(strcmp(save_type, "png") == 0) {
+		sformat = Gdiplus::ImageFormatPNG;
+		wcsftime(wbuffer, 128, L"%Y-%m-%d-%H%M%S.png", timeinfo);
+	} else {
+		printf("unknown image format");
+		return -1;
+	}
+	printf("capture image ... ");
+	if(myCamera.capture() != 0) {
+		printf("[error]");
+		return -1;
+	} else {
+		printf("[ok]");
+	}
+	
+	printf("read image ... ");
+#if (0)
+	if(myCamera.read(buffer, 0, fsize) != 0) {
+		printf("[failed]");
+		return -1;
+	} else {
+		printf("[ok]");
+	}
+#endif
+	if(myCamera.read_ex(buffer, width, height, window_width, window_height) != 0) {
+		printf("[failed]");
+		return -1;
+	} else {
+		printf("[ok]");
+	}
+	wprintf(L"save image file %s ... ", wbuffer);
+	if( (type == IMAGE_FORMAT_RGB565) || (type == IMAGE_FORMAT_RGB555) ) {
+		window_width /= 2;
+	}
+	image::save_image(wbuffer, buffer, window_width, window_height, type, sformat);
+	printf("[ok]");
+	return 0;
+}
+
+
 #define MINIUM_ARGC	4
 #define TIMEOUT		2000
 int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
@@ -999,6 +1165,11 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 				wprintf(L"<- Init file = %s ->\n", initFname); 
 			}
 			while(fgets(lineBuffer, sizeof(lineBuffer), fh) != NULL) {
+				if(strcmp(lineBuffer, "quit") == 0) {
+					fclose(fh);
+					myCamera.close();
+					return 0;
+				}
 				memcpy(prevCmd, lineBuffer, sizeof(lineBuffer));
 				if(CmdLineProcess(lineBuffer) != CMDLINE_BAD_CMD) {
 					printf("\n");

@@ -51,10 +51,10 @@ int main() {
 	
 	/* init camera chip */
 	//default_camera_support();
-	if(_usart_read(2000, 0x0d) == -1) {
-		usart_output_str_pgm(str4);
+	//if(_usart_read(2000, 0x0d) == -1) {
+	//	usart_output_str_pgm(str4);
 		cmd_package_listen();
-	}
+	//}
 	
 	while (1) {		
 		/* skip the /r, /n and Backspace*/
