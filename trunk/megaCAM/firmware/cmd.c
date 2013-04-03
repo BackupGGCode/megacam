@@ -918,6 +918,17 @@ int cmd_package_listen() {
 			continue;
 		}
 		
+#if (0)
+		while(1) {
+			usart_output_str("0x");
+			usart_output_hex(cp.para1);
+			usart_output_str("0x");
+			usart_output_hex(cp.para2);
+			usart_output_str("\r\n");
+			_delay_ms(1000);
+		}
+#endif
+		
 		switch(cp.cmd) {
 		case CMD_WRITE_OVREG:
 			// check the addr and value
@@ -965,23 +976,38 @@ int cmd_package_listen() {
 			UART_WRITE('E');
 		break;
 		case CMD_READ:
-			if(cp.para1 >  MAX_FILE_SIZE || cp.para2 > MAX_FILE_SIZE)
+			if(cp.para1 >  MAX_FILE_SIZE || cp.para2 > MAX_FILE_SIZE) {
+				UART_WRITE(CMD_FAILED);
 				break;
+			}
 			UART_WRITE(CMD_PASS);
 			cam_read(cp.para1, cp.para2);
 		break;
 		case CMD_OVHW_RESET:
 			// PB4 MISO
 		break;
-		case CMD_EXREAD:
-			memcpy(var0, cp.para1, sizeof(cp.para1));
-			memcpy(var1, cp.para2, sizeof(cp.para2));
+		case CMD_EXREAD:		
+			memcpy(var0, &cp.para1, sizeof(cp.para1));
+			memcpy(var1, &cp.para2, sizeof(cp.para2));
+			
 			
 			if(var0[0] > 640 || var1[0] > 640 || var1[0] > var0[0] ||\
 			   var0[1] > 480 || var1[1] > 480 || var1[1] > var0[1]) {
 				UART_WRITE(CMD_FAILED);
 			}
 			UART_WRITE(CMD_PASS);
+#if (0)
+			while(1) {
+				usart_output_hex(var0[0]);
+				usart_output_str(" ");
+				usart_output_hex(var0[1]);
+				usart_output_str(" ");
+				usart_output_hex(var1[0]);
+				usart_output_str(" ");
+				usart_output_hex(var1[1]);
+				usart_output_str("\r\n");
+			}
+#endif
 			ex_cam_read(var0[0], var0[1], var1[0], var1[1]);
 		break;
 		default:
