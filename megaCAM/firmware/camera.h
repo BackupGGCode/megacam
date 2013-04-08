@@ -71,11 +71,8 @@ typedef struct {
 	uint32	check_sum;
 } cam_cmd_t;
 
-
-extern int cam_open(void);
-extern int default_camera_support(void);
-extern int cam_pick_image(void);	// pick one frame image, return when image is ready in FIFO
-extern void cam_read_image(uint16 nbytes, uint8 * buffer); // read data from fifo
+extern int cam_pick_image(void);
 extern void cam_read(unsigned long start, unsigned long len);
+extern void ex_cam_read(uint16 width, uint16 height, uint16 x, uint16 y);
 
 #endif // ifndef _CAMERA_H_

@@ -5,7 +5,7 @@ FUSE_H  =
 FUSE_E	= 0xe2
 
 CFLAGS  = -I . -D DEBUG=0
-OBJECTS = main.o usart.o camera.o sccb.o cmdline.o cmd.o crc16.o
+OBJECTS = main.o usart.o camera.o sccb.o cmd.o
 LDFLAGS = -Wl,-Map=mapfile,-cref
 
 COMPILE = avr-gcc -Wall -Os -DF_CPU=$(F_CPU) $(CFLAGS) -mmcu=$(DEVICE) $(LDFLAGS)

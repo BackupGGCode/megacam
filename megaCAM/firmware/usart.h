@@ -33,7 +33,6 @@ static inline int UART_GETCH_NB(void) {
 		return UDR0 & 0xff;
 }
 
-//extern void usart_open(unsigned long baudrate);
 extern void usart_output_str_pgm(prog_uchar * buf);
 extern void usart_output_str(const char * buf);
 extern void usart_output_hex(unsigned long hex);
