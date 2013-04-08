@@ -1123,6 +1123,8 @@ static int shoot2(int argc, char **argv) {
 
 #define MINIUM_ARGC	4
 #define TIMEOUT		2000
+
+
 int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 {
 	int nRetCode = 0;
@@ -1447,3 +1449,6 @@ int _tmain(int argc, TCHAR* argv[], TCHAR* envp[])
 #endif
 	return nRetCode;
 }
+
+
+

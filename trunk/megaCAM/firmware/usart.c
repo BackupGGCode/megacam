@@ -1,32 +1,10 @@
-#include <usart.h>
-
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
 
-#if (0)
-void usart_open(unsigned long baudrate) {
-	unsigned int UBR0 = 0;
+#include "usart.h"
 	
-	PORTD |= (BOARD_DBG_TXD | BOARD_DBG_RXD);
-	DDRD |= BOARD_DBG_TXD;
-	DDRD &= ~BOARD_DBG_RXD;
-	
-	UBRR0L = (F_CPU / (unsigned long)baudrate / 8 - 1) % 256;
-    UBRR0H = (F_CPU / (unsigned long)baudrate / 8 - 1) / 256;
-	UBR0 = F_CPU / baudrate / 8 - 1;
-	//UBRR0L = UBR0 & 0xFF;
-	//UBRR0H = (UBR0 >> 8) & 0xFF;
-		
-	UCSR0B = (1 << 3) | (1 << 4 );
-    UCSR0C = (3 << 1);
-	UCSR0A = (1 << 1);
-	
-	//print("%d, %d, %d\r\n", UBRR0L, UBRR0H, UBR0);
-}
-#endif
-	
-#if (DEBUG)
+#if (DEBUG) /* only for debug */
 void print(const char *format, ...) {
 	va_list args;
 	char buf[32];
@@ -38,12 +16,18 @@ void print(const char *format, ...) {
 }
 #endif
 
+/*
+** @ USART output string
+**/
 void usart_output_str(const char * buf) {
 	while(*buf != 0) {
 		UART_WRITE(*(buf ++));
 	}	
 }
 
+/*
+** @ USART ouput pgm string
+**/
 void usart_output_str_pgm(prog_uchar * buf) {
 	char cache;
 	
@@ -55,6 +39,9 @@ void usart_output_str_pgm(prog_uchar * buf) {
 	} while (cache != 0);
 }
 
+/*
+** @ USART ouput hex-number
+**/
 void usart_output_hex(unsigned long hex) {
 	//char buffer[16];
 	
@@ -84,7 +71,10 @@ void usart_output_hex(unsigned long hex) {
 #endif	
 }
 
-/* output dec from 0-99999 */
+/*
+** @ USART ouput dec-num
+** @ from range 0-99999
+**/
 void usart_output_dec(unsigned long dec) {
 	char buffer[16];
 	
@@ -93,10 +83,4 @@ void usart_output_dec(unsigned long dec) {
 }
 
 
-int ISR(USART_RX_vect) {  
-	char data;   
-		  
-	data = UDR0;  
-	UART_WRITE(data);
-	return 0;
-}  
+
